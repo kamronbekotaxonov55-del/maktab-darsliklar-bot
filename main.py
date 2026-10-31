@@ -1,6 +1,8 @@
 import asyncio
 import logging
+import os
 import sqlite3
+from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -25,13 +27,11 @@ def db_connect():
 def init_db():
     conn = db_connect()
     cursor = conn.cursor()
-    # Foydalanuvchilar jadvali
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY
         )
     """)
-    # Kitoblar jadvali
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS books (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,12 +72,11 @@ def admin_menu():
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
-# --- START VA ASOSIY BUYRUQLAR ---
+# --- START VA ASOSiy BUYRUQLAR ---
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     user_id = message.from_user.id
     
-    # Foydalanuvchini bazaga qo'shish
     conn = db_connect()
     cursor = conn.cursor()
     cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
@@ -111,13 +110,11 @@ async def list_books(message: types.Message):
         await message.answer("Hozircha botga darsliklar qo'shilmagan.")
         return
 
-    keyboard = InlineKeyboardBuilder()
-    for book in books:
-        # book[0] - ID, book[1] - Kitob nomi
-        keyboard.add(InlineKeyboardButton(text=book[1], callback_data=f"book_{book[0]}"))
-    keyboard.adjust(1)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=book[1], callback_data=f"book_{book[0]}")] for book in books
+    ])
 
-    await message.answer("Mavjud darsliklarni tanlang:", reply_markup=keyboard.as_markup())
+    await message.answer("Mavjud darsliklarni tanlang:", reply_markup=keyboard)
 
 @dp.callback_query(F.data.startswith("book_"))
 async def send_book_pdf(callback: types.CallbackQuery):
@@ -249,17 +246,33 @@ async def broadcast_process(message: types.Message, state: FSMContext):
         try:
             await message.send_copy(chat_id=user[0])
             success += 1
-            await asyncio.sleep(0.05)  # Telegram limitiga tushmaslik uchun
+            await asyncio.sleep(0.05)
         except Exception:
             failed += 1
 
     await message.answer(f"✅ Reklama tarqatildi!\n\nMuvaffaqiyatli: {success}\nXatoliklar (bloklaganlar): {failed}", reply_markup=admin_menu())
     await state.clear()
 
+# --- RENDER UCHUN VEB SERVER ---
+async def handle(request):
+    return web.Response(text="Bot is running!")
+
+async def web_server():
+    app = web.Application()
+    app.router.add_get("/", handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+
 # --- MAIN FUNKSIYA ---
 async def main():
     print("Bot ishga tushdi...")
-    await dp.start_polling(bot)
+    await asyncio.gather(
+        dp.start_polling(bot),
+        web_server()
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())
