@@ -599,7 +599,6 @@ async def echo_all(message: types.Message, state: FSMContext):
         row = cursor.fetchone()
         last_class = row[0] if row and row[0] else ""
 
-        # Yuqorida yasab bergan rasmimizning file_id sini shu yerga yozasiz:
         photo_file_id = "SHU_YERGA_RASMINGIZNING_FILE_ID_SINI_YOZING"
 
         welcome_text = (
